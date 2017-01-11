@@ -1,0 +1,270 @@
+---
+title: "Germination probabilities estimation"
+author: "Ingrid Vilmus"
+date: "January 9, 2017"
+output: html_document
+---
+
+Global options
+
+```{r}
+
+```
+
+Package library
+
+```{r}
+library(MuMIn)
+library(gplots)
+library(RColorBrewer)
+library(knitr)
+library(lattice)
+```
+
+Input File
+
+```{r}
+# germination survival
+tot<-read.table("/media/rode/SAMSUNG/post_doc Luzerne/donnees/test_germination.csv", header=TRUE, sep=",", dec=".")
+
+# file with informations on the number of seeds per pod for each genotype
+pods<-read.table("/media/rode/SAMSUNG/post_doc Luzerne/donnees/Luzerne_graines.csv", header=TRUE, sep=",", dec=".")
+pods$Pop_geno_mother<-as.factor(paste(pods$Pop_geno,pods$Mother,sep="_"))
+```
+
+Data preparation  
+From the greenhouse data, the number of seeds per pod can be averaged by genotype or by mother within genotype (uncomment/comment the corresponding lines to change it).
+
+```{r}
+
+# sum per location --> sometimes, more than one plant germinated from one pod
+podsum<-aggregate(tot$GerminationSurvival,by=list(location=tot$location),FUN=sum)
+colnames(podsum)[2]<-"GerminationSurvival"
+podsum<-merge(tot[,c("ID","zone","quadrat","position","location","Pop_geno")],podsum,all=F)
+podsum<-unique(podsum,MARGIN=1)
+podsum$Pop_geno_mother<-substr(podsum$ID,start=1,stop=13)
+
+for (i in c(1,6,8)) {podsum[,i]<-as.factor(podsum[,i])}
+
+# average number of seeds per pods per mother 
+# seedperpod<-aggregate(pods$Nb_Gr_par_Go,by=list(Pop_geno_mother=pods$Pop_geno_mother),FUN=mean,na.rm=TRUE)
+# colnames(seedperpod)[2]<-"seednb"
+
+# or per genotype
+seedperpod<-aggregate(pods$Nb_Gr_par_Go,by=list(Pop_geno=pods$Pop_geno),FUN=mean,na.rm=TRUE)
+colnames(seedperpod)[2]<-"seednb"
+
+
+# add to the global data, the germination survival scores
+#don_bimod<-merge(podsum,seedperpod,by="Pop_geno_mother",all=FALSE)
+don_bimod<-merge(podsum,seedperpod,by="Pop_geno",all=FALSE)
+
+# calculation of the number of death from the initial (estimated) number of seeds per pod and the number of survivors
+don_bimod$GerminationDeath<-round(don_bimod$seednb)-don_bimod$GerminationSurvival
+
+# transformation of the quadrat variable since 2 quadrats from 2 different zones can have the same name/nb whereas they should be different
+don_bimod$quadrat <- as.factor(paste(don_bimod$zone ,don_bimod$quadrat ,sep="_"))
+# delete persisting levels
+don_bimod$Pop_geno <- factor(don_bimod$Pop_geno)
+
+```
+
+
+Data exploration  
+
+Visualization of the number of Survival according to the different factors:
+
+- genotypes
+
+
+```{r}
+
+coul <- c(brewer.pal(9, "Set1"),brewer.pal(nlevels(don_bimod$Pop_geno)-9,"Set3"))
+par(mar=c(7.1,4.1,4.1,6.1),xpd=T)
+Survmean<-aggregate(don_bimod$GerminationSurvival,by=list(Pop_geno=don_bimod$Pop_geno),mean,na.rm=T)
+barplot2(Survmean$x,names.arg = Survmean$Pop_geno,beside=TRUE,col=coul,las=2)
+legend("topright",legend = levels(don_bimod$Pop_geno),fill=coul,cex=0.7,inset=c(-0.2,0))
+
+```
+
+The genotypes from Spain seems to have weak germination/survival abilities in the Narbonne context whereas the 3 genotypes from Corsica have the higher number of survivors. However, at this stage, those values are not weighted by the number of seeds present in pods which was demonstrated as being influenced by genotype (H2 individual = 0.67).
+
+- zone and genotypes
+
+```{r}
+
+tabs<-xtabs(don_bimod$GerminationSurvival~ don_bimod$Pop_geno+don_bimod$zone)
+coul <- c(brewer.pal(9, "Set1"),brewer.pal(nlevels(don_bimod$Pop_geno)-9,"Set3"))
+par(mar=c(5.1,4.1,4.1,6.1),xpd=T)
+barplot2(tabs,beside=TRUE,col=coul)
+legend("topright",legend = levels(don_bimod$Pop_geno),fill=coul,cex=0.7,inset=c(-0.2,0))
+
+```
+
+Some genotypes were only present in interpop and some only in the zones 12, 13 and 8 (intrapop). The number of survivors is larger in interpop zone since it contains 6 quadrats with 44 locations (1 location corresponds to one pod sown) in each quadrat whereas the zones 12, 3 and 8 contains only 2 quadrats per zone and 32 locations per quadrat.
+
+```{r}
+kable(table(don_bimod$zone,don_bimod$quadrat),format="html")
+kable(table(don_bimod$zone,don_bimod$Pop_geno),format="html")
+```
+
+- quadrat and genotypes
+
+
+```{r,fig.height=7,fig.width=10}
+par(mar=c(5.1,4.1,4.1,2.1),xpd=T)
+layout(matrix(c(1,1,2,2),2,2,byrow=T),heights=c(1.5,1))
+tabs<-xtabs(don_bimod$GerminationSurvival~ don_bimod$Pop_geno+don_bimod$quadrat)
+coul <- c(brewer.pal(9, "Set1"),brewer.pal(nlevels(don_bimod$Pop_geno)-9,"Set3"))
+
+barplot2(tabs,beside=TRUE,col=coul,las=2)
+plot.new()
+legend("center",legend = levels(don_bimod$Pop_geno),fill=coul,cex=1,inset=c(-0.2,0),ncol=2)
+
+
+```
+
+At this stage, we can deal with the ratio of Survivors on the number of seeds per pod for each location. First, let's see if there is a link between those variables.
+
+```{r}
+Survmean<-merge(seedperpod,Survmean)
+par(mar=c(5.1,4.1,4.1,2.1),xpd=T)
+layout(matrix(c(1,1,2,2),2,2,byrow=T),heights=c(1.5,1))
+plot(Survmean$x~Survmean$seednb,pch=19,xlab="seed nb/pod",ylab="Survivors mean",col=coul)
+
+plot.new()
+legend("center",legend = levels(don_bimod$Pop_geno),fill=coul,cex=1,inset=c(-0.2,0),ncol=2)
+
+cortest<-cor.test(Survmean$x,Survmean$seednb)
+
+```
+
+The correlation coefficient is `r round(cor(Survmean$x,Survmean$seednb),2) ` but it is not significantly different from 0 (pvalue = `r round(cortest$p.value,4)`) and thus did not allow to conclude on a link between seeds production and germination potential.
+
+
+We can calculate directly the frequency of germination per genotype using the dataset and considering the number of seeds per pod as a constant per genotype.
+
+
+```{r}
+freq_GS<-aggregate(don_bimod$GerminationSurvival/round(don_bimod$seednb),by=list(Pop_geno=don_bimod$Pop_geno),mean,na.rm=TRUE)
+colnames(freq_GS)[2]<-"freq_GS"
+par(mar=c(7.1,4.1,4.1,6.1),xpd=T)
+barplot2(freq_GS$freq_GS,names.arg = freq_GS$Pop_geno,beside=TRUE,col=coul,las=2,ylab="freq GS")
+legend("topright",legend = levels(freq_GS$Pop_geno),fill=coul,cex=0.7,inset=c(-0.2,0))
+
+
+```
+
+
+Average per zone and genotype
+
+```{r}
+freq_GS_zone<-aggregate(don_bimod$GerminationSurvival/round(don_bimod$seednb),by=list(Pop_geno=don_bimod$Pop_geno,zone=don_bimod$zone),mean,na.rm=TRUE)
+colnames(freq_GS_zone)[3]<-"freq_GS"
+
+tabs<-xtabs(freq_GS_zone$freq_GS~ freq_GS_zone$Pop_geno+freq_GS_zone$zone)
+coul <- c(brewer.pal(9, "Set1"),brewer.pal(nlevels(don_bimod$Pop_geno)-9,"Set3"))
+par(mar=c(5.1,4.1,4.1,6.1),xpd=T)
+barplot2(tabs,beside=TRUE,col=coul,ylab="freq GS")
+legend("topright",legend = levels(don_bimod$Pop_geno),fill=coul,cex=0.7,inset=c(-0.2,0))
+
+
+```
+
+Average per quadrat and genotype
+
+```{r,fig.height=7,fig.width=10}
+freq_GS_quadrat<-aggregate(don_bimod$GerminationSurvival/round(don_bimod$seednb),by=list(Pop_geno=don_bimod$Pop_geno,quadrat=don_bimod$quadrat),mean,na.rm=TRUE)
+colnames(freq_GS_quadrat)[3]<-"freq_GS"
+
+tabs<-xtabs(freq_GS_quadrat$freq_GS~ freq_GS_quadrat$Pop_geno+freq_GS_quadrat$quadrat)
+coul <- c(brewer.pal(9, "Set1"),brewer.pal(nlevels(don_bimod$Pop_geno)-9,"Set3"))
+layout(matrix(c(1,1,2,2),2,2,byrow=T),heights=c(1.5,1))
+par(mar=c(5.1,4.1,4.1,2.1),xpd=T)
+barplot2(tabs,beside=TRUE,col=coul,las=2,ylab="freq GS")
+plot.new()
+legend("center",legend = levels(don_bimod$Pop_geno),fill=coul,cex=1,inset=c(-0.2,0),ncol=2)
+```
+
+
+Germination modelisation with binomial distribution yi -> B(ni,pi) 
+yi : number of survivors for the location --> number of success  
+pi : probability of survival for the location
+ni : average number of grains in a pod per genotype for the location  
+ni - yi : number of failures  
+The systematic part may contain several variables explanatory variables : zone, quadrat, genotype, mother per genotype.  
+
+1) Choice of the link function on the saturated model based on the AICc
+
+```{r}
+m1 <-glm(cbind(GerminationSurvival,GerminationDeath)~quadrat+Pop_geno+zone,data=don_bimod,family=binomial(link='logit'))
+m2 <-glm(cbind(GerminationSurvival,GerminationDeath)~quadrat+Pop_geno+zone,data=don_bimod,family=binomial(link='probit'))
+m3 <-glm(cbind(GerminationSurvival,GerminationDeath)~quadrat+Pop_geno+zone,data=don_bimod,family=binomial(link='cloglog'))
+m4 <-glm(cbind(GerminationSurvival,GerminationDeath)~quadrat+Pop_geno+zone,data=don_bimod,family=binomial(link='cauchit'))
+
+linkfunction<-c('logit','probit','cloglog','cauchit')
+names(linkfunction)<-c("m1","m2","m3","m4")
+
+modsel<-model.sel(m1,m2,m3,m4)
+modsel
+
+binlink<-linkfunction[rownames(modsel)[1]]
+
+```
+
+2) Choice of the model based on AICc to determine which explanatory variables have to be included  
+
+```{r}
+# nul model --> only environmental effect due to quadrat location
+germ_bimod0<-glm(cbind(GerminationSurvival,GerminationDeath)~quadrat,data=don_bimod,family=binomial(link=binlink))
+summary(germ_bimod0)
+
+# Mother per genotype and quadrat
+germ_bimod1<-glm(cbind(GerminationSurvival,GerminationDeath)~quadrat+Pop_geno_mother,data=don_bimod,family=binomial(link=binlink))
+summary(germ_bimod1)
+
+# genotype and quadrat
+germ_bimod2<-glm(cbind(GerminationSurvival,GerminationDeath)~quadrat+Pop_geno,data=don_bimod,family=binomial(link=binlink))
+summary(germ_bimod2)
+
+# genotype and zone
+germ_bimod3<-glm(cbind(GerminationSurvival,GerminationDeath)~zone+Pop_geno,data=don_bimod,family=binomial(link=binlink))
+summary(germ_bimod3)
+
+# genotype x zone interaction and quadrat
+germ_bimod4<-glm(cbind(GerminationSurvival,GerminationDeath)~quadrat+Pop_geno*zone,data=don_bimod,family=binomial(link=binlink))
+summary(germ_bimod4)
+
+
+bimod_sel<-model.sel(germ_bimod0,germ_bimod1,germ_bimod2,germ_bimod3,germ_bimod4)
+bimod_sel
+
+bestmod<-get(rownames(bimod_sel[1]))
+
+```
+
+Based on the selection model (AICc criteria), the best model is `r rownames(bimod_sel[1]) ` 
+
+
+3) Results visualisation and validation  
+
+```{r}
+# fitted(bestmod) corresponds to the probabilities predicted by the model for each observation (location)
+# comparison of those values with the frequency of germination survival per observation
+plot(don_bimod$GerminationSurvival/round(don_bimod$seednb),fitted(bestmod),col=coul[unclass(don_bimod$Pop_geno)],pch=16,xlab="obs",ylab="fitted")
+
+# plot of residuals according to quadrat levels
+xyplot(residuals(bestmod)~don_bimod$quadrat)
+histogram(~residuals(bestmod)|don_bimod$quadrat)
+
+# according to genotype
+histogram(~residuals(bestmod)|don_bimod$Pop_geno)
+
+```
+
+
+
+
+
+
+
