@@ -19,6 +19,8 @@ library(gplots)
 library(RColorBrewer)
 library(knitr)
 library(lattice)
+library(lme4)
+
 ```
 
 Input File
@@ -64,8 +66,10 @@ don_bimod$GerminationDeath<-round(don_bimod$seednb)-don_bimod$GerminationSurviva
 
 # transformation of the quadrat variable since 2 quadrats from 2 different zones can have the same name/nb whereas they should be different
 don_bimod$quadrat <- as.factor(paste(don_bimod$zone ,don_bimod$quadrat ,sep="_"))
-# delete persisting levels
-don_bimod$Pop_geno <- factor(don_bimod$Pop_geno)
+# delete persisting levels of the factors after subsetting
+for (i in c(1:6,8)) {don_bimod[,i]<-factor(don_bimod[,i])}
+
+#write.table(don_bimod,"/media/rode/SAMSUNG/post_doc Luzerne/donnees/pheno_germination.csv",sep=";",dec=".",col.names=T,row.names=FALSE,quote=F)
 
 ```
 
@@ -314,7 +318,118 @@ WC
 plot(don_bimod2$GerminationSurvival,fitted(bestmod2),col=coul[unclass(don_bimod$Pop_geno)],pch=16,xlab="obs",ylab="estimated pij")
 ```
 
-#### Modelisation with random effects  
+#### Modelisation with random effects 
+--> Number of success relative to the number of seeds sown (taken from a previous estimation of the number of seeds per pod for each genotype).  
+Germination modelisation with binomial distribution yi -> B(ni,pi) 
+yi : number of survivors for the location --> number of success  
+pi : probability of survival for the location
+ni : average number of grains in a pod per genotype for the location  
+ni - yi : number of failures  
+The systematic part may contain several explanatory variables : zone, quadrat, genotype, mother per genotype. The random effect can be used for quadrat, genotype and/or mother per genotype effect. Set as random implies we assume the effect follow a Normal distribution with 0 mean and a variance which has to be estimated.  
+
+Choice of the link function  
+
+```{r}
+m1 <-glmer(cbind(GerminationSurvival,GerminationDeath)~zone + (1|Pop_geno_mother) + (1|Pop_geno) + (1|zone:Pop_geno)+ (1|quadrat)+ (1|location),data=don_bimod,family=binomial(link='logit'))
+m2 <-glmer(cbind(GerminationSurvival,GerminationDeath)~zone + (1|Pop_geno_mother) + (1|Pop_geno) + (1|zone:Pop_geno)+ (1|quadrat)+ (1|location),data=don_bimod,family=binomial(link='probit'))
+m3 <-glmer(cbind(GerminationSurvival,GerminationDeath)~zone + (1|Pop_geno_mother) + (1|Pop_geno) + (1|zone:Pop_geno)+ (1|quadrat)+ (1|location),data=don_bimod,family=binomial(link='cloglog'))
+m4 <-glmer(cbind(GerminationSurvival,GerminationDeath)~zone + (1|Pop_geno_mother) + (1|Pop_geno) + (1|zone:Pop_geno)+ (1|quadrat)+ (1|location),data=don_bimod,family=binomial(link='cauchit'))
+
+linkfunction<-c('logit','probit','cloglog','cauchit')
+names(linkfunction)<-c("m1","m2","m3","m4")
+
+modsel<-model.sel(m1,m2,m3,m4)
+modsel
+
+#binlink<-linkfunction[rownames(modsel)[1]]
+binlink<-'logit'
+
+```
+
+
+```{r}
+
+# check for overdispersion
+germ_rbimod_od<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ (1|location),data=don_bimod,family=binomial(link=binlink))
+summary(germ_rbimod_od)
+
+# environmental effect (quadrat) set as random
+germ_rbimod0<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ (1|quadrat),data=don_bimod,family=binomial(link=binlink))
+summary(germ_rbimod0)
+
+# genotype effect set as random
+germ_rbimod00<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ (1|Pop_geno),data=don_bimod,family=binomial(link=binlink))
+summary(germ_rbimod00)
+
+# quadrat and mother per genotype set as random
+germ_rbimod1<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ (1|quadrat) + (1|Pop_geno_mother) ,data=don_bimod,family=binomial(link=binlink))
+summary(germ_rbimod1)
+
+# quadrat and genotype set as random
+germ_rbimod2<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ (1|quadrat) + (1|Pop_geno) ,data=don_bimod,family=binomial(link=binlink))
+summary(germ_rbimod2)
+
+# zone and genotype set as random
+germ_rbimod3<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ (1|zone) + (1|Pop_geno) ,data=don_bimod,family=binomial(link=binlink))
+summary(germ_rbimod3)
+
+# zone as a fixed effect, genotype as a random effect 
+germ_rbimod4<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ zone + (1|Pop_geno) ,data=don_bimod,family=binomial(link=binlink))
+summary(germ_rbimod4)
+
+relgrad <- with(germ_rbimod4@optinfo$derivs,solve(Hessian,gradient))
+max(abs(relgrad))
+
+germ_rbimod4bis<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ zone + (0+zone|Pop_geno) ,data=don_bimod,family=binomial(link=binlink))
+relgrad <- with(germ_rbimod4bis@optinfo$derivs,solve(Hessian,gradient))
+max(abs(relgrad))
+
+vcov(germ_rbimod4bis)
+ranef(germ_rbimod4bis)
+summary(germ_rbimod4bis)
+
+# complete model to estimate variance parameters for simulations
+germ_rbimod5<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ zone + (1|Pop_geno_mother) + (1|Pop_geno) + (1|zone:Pop_geno)+ (1|quadrat)+ (1|location) ,data=don_bimod,family=binomial(link=binlink))
+
+
+summary(germ_rbimod5)
+
+# check for convergence warnings given by glmer
+relgrad <- with(germ_rbimod5@optinfo$derivs,solve(Hessian,gradient))
+max(abs(relgrad))
+
+germ_rbimod5<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ zone + (1|Pop_geno/Pop_geno_mother) + (1|zone:Pop_geno)+ (1|quadrat)+ (1|location) ,data=don_bimod,family=binomial(link=binlink))
+logLik(germ_rbimod5)
+
+summary(germ_rbimod5)
+
+?bootMer
+
+mySumm <- function(.) {
+   c(beta=fixef(.), sig01=sqrt(unlist(VarCorr(.))))
+}
+
+boo01 <- bootMer(germ_rbimod5, mySumm, nsim = 10)
+
+boo01
+
+library(boot)
+## Extract all CIs (somewhat awkward)
+bCI.tab <- function(b,ind=length(b$t0), type="perc", conf=0.95) {
+    btab0 <- t(sapply(as.list(seq(ind)),
+                    function(i)
+                    boot.ci(b,index=i,conf=conf, type=type)$percent))
+    btab <- btab0[,4:5]
+    rownames(btab) <- names(b$t0)
+    a <- (1 - conf)/2
+    a <- c(a, 1 - a)
+    pct <- stats:::format.perc(a, 3)
+    colnames(btab) <- pct
+    return(btab)
+}
+bCI.tab(boo01)
+
+```
 
 
 
