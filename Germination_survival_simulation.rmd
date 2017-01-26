@@ -1,0 +1,216 @@
+---
+title: "Germination design simulation"
+author: "Ingrid Vilmus"
+date: "January 18, 2017"
+output: html_document
+---
+
+Simulations to estimated power on the design used to estimate genotype germination survival probabilities from pods. 
+Read Johnson et al., 2015.
+
+```{r}
+library(lme4)
+library(boot)
+source("/media/rode/SAMSUNG/post_doc Luzerne/Analyse_luzerne/Scripts_Medicago/functions_simulations.r")
+source("/media/rode/SAMSUNG/post_doc Luzerne/Analyse_luzerne/Scripts_Medicago/function_generic_simulation.r")
+
+```
+
+
+Real data to extract the experimental design  
+Firstly, the data is analysed with a GLMM model (Generalized Linear Mixed Model).  
+
+It means the germination survival rate is modelled as function of :  
+- a zone fixed effect
+- a mother:geno interaction random effect --> interaction set by name of Pop_geno_mother
+- a geno random effect
+- a zone:geno interaction random effect
+- a quadrat:zone interaction random effect (environmental effect) --> interaction set by name of quadrat
+- a "residual" environmental effect (location) to check for overdispersion  
+
+```{r}
+realdon<-read.table("/media/rode/SAMSUNG/post_doc Luzerne/donnees/pheno_germination.csv", header=TRUE, sep=";", dec=".")
+
+# model used for analysis
+mod<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ zone + (1|Pop_geno_mother) + (1|Pop_geno) + (1|zone:Pop_geno)+ (1|quadrat)+ (1|location) ,data=realdon,family=binomial(link="logit"))
+
+# come back to the data scale for the fixed coefficients --> plogis(A)=exp(A)/(1+exp(A))
+coef_mod<-fixef(mod)
+
+Pz12<-plogis(coef_mod[1])
+Pz3<-plogis(coef_mod[2]+coef_mod[1])
+Pz8<-plogis(coef_mod[3]+coef_mod[1])
+Pzinterpop<-plogis(coef_mod[4]+coef_mod[1])
+
+# recalculation of the Odds
+Oddz12<-Pz12/(1-Pz12)
+Oddz3<-Pz3/(1-Pz3)
+Oddz8<-Pz8/(1-Pz8)
+Oddzinterpop<-Pzinterpop/(1-Pzinterpop)
+
+  
+```
+
+Pz12 corresponds to the average probability for one seed to survive (germinate and survive until flowering) in the zone 12 (P(Y=1/zone=12)) and is `r round(Pz12,2) `.  
+Pz3 corresponds to the average probability for one seed to survive (germinate and survive until flowering) in the zone 3 (P(Y=1/zone=3)) and is `r round(Pz3,2) `.  
+Pz8 corresponds to the average probability for one seed to survive (germinate and survive until flowering) in the zone 8 (P(Y=1/zone=8)) and is `r round(Pz8,2) `.  
+Pz12 corresponds to the average probability for one seed to survive (germinate and survive until flowering) in the zone interpop (P(Y=1/zone=interpop)) and is `r round(Pzinterpop,2) `.  
+
+Normally, the Odds ratio are very close to the P ratio. Ratio are always relatives to the intercept, ie the first level of the fixed factor, the zone 12:  
+- zone 3 --> Pratio = `r  round(Pz3/Pz12,2) ` and Oddratio = `r round(Oddz3/Oddz12,2)`  
+- zone 8 --> Pratio = `r  round(Pz8/Pz12,2) ` and Oddratio = `r round(Oddz8/Oddz12,2)`  
+- zone 3 --> Pratio = `r  round(Pzinterpop/Pz12,2) ` and Oddratio = `r round(Oddzinterpop/Oddz12,2)`  
+
+For the simulation, this property allows to give an input parameter for fixed effects coefficient in terms of log of Pratio (at the data scale and not at the link function scale).  
+
+
+parameters to set:  
+- nsim --> the number of simulations  
+- npods --> number of grains per pods, can be an integer or a vector of integers for each genotype (in the genotype levels order)  
+- varpods --> variance of the number of seeds per pods, if npods is a single integer, model an inter-genotypic variation and if npods is a vector of integers for each genotype, model an intra genotype variation. Default value is 0.
+The user must choose between extract the parameters from the model run on real data or give parameters:  
+- mod --> model used to extract coefficients and variance  
+- scenario --> list of x elements :  
+  * $design --> dataframe corresponding to the design of the data  
+  * $fixed --> vector of coefficients for fixed effects, (can be set as log of odd or odd ratio if the link function used is logit for example if the values are at the data scale). The first element must be called "(Intercept)", see examples.  
+  * $random --> vector with variances for random effects, the first element must correspond to the residual variance used to check for overdispersion, see examples.  
+  * $linkfamily --> the link family --> "logit"
+
+
+Test various scenarios  
+
+1) Simulation of the fixed and random effects from previously estimated parameters from real data
+
+```{r,fig.height=20,cache=TRUE}
+# simulation based on parameters estimated previously on a model to check if the simulation process is okay
+mod<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ zone + (1|Pop_geno) + (1|zone:Pop_geno)+ (1|quadrat)+ (1|location) ,data=realdon,family=binomial(link="logit"))
+
+# bootstrap procedure to estimate CI on parameters estimated from the model
+mySumm <- function(.) {
+   c(beta=fixef(.), sig01=sqrt(unlist(VarCorr(.))))
+}
+
+boo01 <- bootMer(mod, mySumm, nsim = 100)
+
+
+
+npods1<-tapply(realdon$seednb,list(Pop_geno=realdon$Pop_geno),FUN=mean,simplify=TRUE)
+
+nsim<-100
+simres1<-t(sapply(1:nsim,function(i) {
+  #print(i)
+  simod<-glmer(cbind(Y,D) ~ zone + (1|Pop_geno) + (1|zone:Pop_geno)+ (1|quadrat)+ (1|location) ,data=simgerm_apply(npods=npods1,factpods = "Pop_geno",varpods=0,mod=mod),family=binomial(link="logit"))
+  res<-c(i,fixef(simod),as.data.frame(VarCorr(simod))$vcov)
+  names(res)<-c("simulation",names(fixef(simod)),as.data.frame(VarCorr(simod))$grp)
+  return(res)
+}))
+
+simres1<-as.data.frame(simres1)
+
+truepara<-c(fixef(mod),as.data.frame(VarCorr(mod))$vcov)
+
+par(mfrow=c(4,2))
+
+for (i in 2:ncol(simres1)) {
+  hist(simres1[,i],main=names(simres1[i]),xlab=paste("input =",round(truepara[i-1],2)))
+}
+
+```
+
+2) Same process but with the best model from previous analysis
+
+
+```{r,fig.height=20,cache=TRUE}
+# simulation based on parameters estimated previously on a model to check if the simulation process is okay
+mod<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ (1|quadrat) + (1|Pop_geno) ,data=realdon,family=binomial(link=binlink))
+
+
+npods1<-tapply(realdon$seednb,list(Pop_geno=realdon$Pop_geno),FUN=mean,simplify=TRUE)
+
+nsim<-100
+simres1<-t(sapply(1:nsim,function(i) {
+  #print(i)
+  simod<-glmer(cbind(Y,D) ~ (1|quadrat) + (1|Pop_geno) ,data=simgerm_apply(npods=npods1,factpods = "Pop_geno",varpods=0,mod=mod),family=binomial(link="logit"))
+  res<-c(i,fixef(simod),as.data.frame(VarCorr(simod))$vcov)
+  names(res)<-c("simulation",names(fixef(simod)),as.data.frame(VarCorr(simod))$grp)
+  return(res)
+}))
+
+simres1<-as.data.frame(simres1)
+
+truepara<-c(fixef(mod),as.data.frame(VarCorr(mod))$vcov)
+
+par(mfrow=c(1,2))
+
+for (i in 2:ncol(simres1)) {
+  hist(simres1[,i],main=names(simres1[i]),xlab=paste("input =",round(truepara[i-1],2)))
+}
+
+```
+
+
+
+
+
+2) Set manually parameters
+- scenario 1: Test the influence of the surdispersion on the % variance explained by genotype on the best model
+
+```{r,eval=FALSE}
+
+mod<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ (1|quadrat) + (1|Pop_geno)+(1|location) ,data=realdon,family=binomial(link=binlink))
+truepara<-c(fixef(mod),as.data.frame(VarCorr(mod))$vcov)
+b0<-fixef(mod)
+d<-(1+exp(b0))^2
+P<-plogis(fixef(mod))
+varg<-0.4404
+varq<-0.1303
+
+# R represent the proportion of variance explained by the location factor (representing each obs) relative to all the other
+# variance parameters at the data scale --> see Nakagawa 2010
+R<-seq(0,0.8,by=0.2)
+R
+
+# at the data scale
+#varl<-R*(P^2*(varg+varq)+P*(1-P)*d)/(P^2*(1-R))
+#Rverif<-(varl*P^2/d)/(((varl+varg+varq)*P^2)+P*(1-P))
+
+
+# at the logit scale
+varl<-R*(varg+varq+pi^2/3)/(1-R)
+
+npods1<-tapply(realdon$seednb,list(Pop_geno=realdon$Pop_geno),FUN=mean,simplify=TRUE)
+for (i in 1:length(varl)) {
+  scenar<-list(design=realdon[,c("Pop_geno","quadrat","location")],fixed=list("(Intercept)"=b0),random=c(location=varl[i],Pop_geno=varg,quadrat=varq),linkfamily="logit")
+  
+  # simulation process
+  nsim<-100
+  simres1<-t(sapply(1:nsim,function(i) {
+    #print(i)
+    donsim<-simgerm_apply(npods=npods1,factpods = "Pop_geno",varpods=0,scenario=scenar)
+    simod1<-glmer(cbind(Y,D) ~ (1|quadrat) + (1|Pop_geno) + (1|location) ,data=donsim,family=binomial(link="logit"))
+    simod2<-glmer(cbind(Y,D) ~ (1|quadrat) + (1|Pop_geno),data=donsim,family=binomial(link="logit"))
+    # delta AIC
+    dAICc<-AICc(simod1,simod2)[2,2]-AICc(simod1,simod2)[1,2]
+    return(c(i,dAICc))
+  }))
+  colnames(simres1)<-c("nsimul","dAICc")
+  # proportion of the dAICc from all the simulated dataset which are superior to 2, which means the model with location is better
+  prop<-length(which(simres1[,"dAICc"]>=2))/nrow(simres1)
+
+  
+}
+
+
+
+```
+
+
+
+
+
+```{r}
+scenario1<-list(design=realdon[,c(1:2,4:5,8)],fixed=list("(Intercept)"=qlogis(Pz12),zone=log(c("3"=Oddz3/Oddz12,"8"=Oddz8/Oddz12,zoneinterpop=Oddzinterpop/Oddz12))),random=c(location=10^-9,Pop_geno_mother=10^-9,Pop_geno=0.4,quadrat=0.08,"zone:Pop_geno"=0.03),linkfamily="logit")
+```
+
+
+
