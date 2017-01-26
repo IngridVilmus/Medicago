@@ -388,21 +388,35 @@ vcov(germ_rbimod4bis)
 ranef(germ_rbimod4bis)
 summary(germ_rbimod4bis)
 
-# complete model to estimate variance parameters for simulations
-germ_rbimod5<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ zone + (1|Pop_geno_mother) + (1|Pop_geno) + (1|zone:Pop_geno)+ (1|quadrat)+ (1|location) ,data=don_bimod,family=binomial(link=binlink))
-
-
-summary(germ_rbimod5)
-
-# check for convergence warnings given by glmer
+# zone as a fixed effect, genotype as a random effect, quadrat and location as random and interaction zone and geno as random
+germ_rbimod5<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ zone + (1|Pop_geno) + (1|zone:Pop_geno)+ (1|quadrat)+ (1|location) ,data=don_bimod,family=binomial(link=binlink))
+# check for convergence warnings given by glmer, if max(abs(relgrad))<0.01 ok
 relgrad <- with(germ_rbimod5@optinfo$derivs,solve(Hessian,gradient))
 max(abs(relgrad))
 
-germ_rbimod5<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ zone + (1|Pop_geno/Pop_geno_mother) + (1|zone:Pop_geno)+ (1|quadrat)+ (1|location) ,data=don_bimod,family=binomial(link=binlink))
-logLik(germ_rbimod5)
 
-summary(germ_rbimod5)
 
+# complete model to estimate variance parameters for simulations
+germ_rbimod6<-glmer(cbind(GerminationSurvival,GerminationDeath) ~ zone + (1|Pop_geno_mother) + (1|Pop_geno) + (1|zone:Pop_geno)+ (1|quadrat)+ (1|location) ,data=don_bimod,family=binomial(link=binlink))
+
+
+
+
+# model selection based on aic
+
+
+germ_msel<-model.sel(germ_rbimod00,germ_rbimod0,germ_rbimod1,germ_rbimod2,germ_rbimod3,germ_rbimod4,germ_rbimod4bis,germ_rbimod5,germ_rbimod6)
+germ_msel
+
+bestmod<-get(rownames(germ_msel)[1])
+summary(bestmod)
+
+```
+
+
+Bootstrap procedure to estimate CI
+
+```{r}
 ?bootMer
 
 mySumm <- function(.) {
@@ -428,10 +442,6 @@ bCI.tab <- function(b,ind=length(b$t0), type="perc", conf=0.95) {
     return(btab)
 }
 bCI.tab(boo01)
-
 ```
-
-
-
 
 
