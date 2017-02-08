@@ -1,5 +1,28 @@
 
+#-----------------------------------------------------------------------------------------------------------------------#
+# Functions for bootstrap estimation of Confidence Interval on a mixed model
 
+
+mySumm <- function(.) {
+  c(beta=fixef(.), sig01=sqrt(unlist(VarCorr(.))))
+}
+
+bCI.tab <- function(b,ind=length(b$t0), type="perc", conf=0.95) {
+  btab0 <- t(sapply(as.list(seq(ind)),
+                    function(i)
+                      boot.ci(b,index=i,conf=conf, type=type)$percent))
+  btab <- btab0[,4:5]
+  rownames(btab) <- names(b$t0)
+  a <- (1 - conf)/2
+  a <- c(a, 1 - a)
+  pct <- stats:::format.perc(a, 3)
+  colnames(btab) <- pct
+  return(btab)
+}
+
+
+
+#-----------------------------------------------------------------------------------------------------------------------#
 # Generic Function to simulate the data 
 # onlu works for glmer(Y~X1+...+Xn+(1|a1)+...+(1|ar)+(1|X1:a1)+...+(1|Xn:ar))
 # ie no nested random effect within fixed effect eg. (0+X1|a1) --> TO DO
