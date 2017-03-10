@@ -77,7 +77,7 @@ simgerm_apply<-function(npods=6,varpods=0,factpods=NULL,mod=NULL,scenario=NULL) 
     rand.names<-names(rand.var)
     # identify interaction factors
     rand.var_interact<-rand.names[!rand.names%in%colnames(data_fact)]
-    # create a list whith for each element the simple effect forming each interaction term
+    # create a list with for each element the simple effect forming each interaction term
     if (length(rand.var_interact)>1) {
       colsup<-lapply(strsplit(rand.var_interact,":"),function(x) {
         as.character(Reduce(function(x,y)interaction(x,y,sep=":"),as.list(data_fact[,colnames(data_fact)%in%x])))
