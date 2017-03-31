@@ -144,6 +144,6 @@ LA_sim<-function(size=1,ngeno,nhab,nrep,sdlist=list(sdhab=2,sdrep=2,sdint=2,sdsl
   # account for overdispersion at the observation level
   data_sim$survivors<-rbinom(n=1:nrow(data_sim),size=data_sim$size,prob=data_sim$P)
   data_sim$obs<-seq(1,nrow(data_sim))
-  
+  return(data_sim)
 }
 
